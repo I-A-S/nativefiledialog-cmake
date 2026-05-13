@@ -10,7 +10,12 @@ add_library(NativeFileDialog STATIC
 )
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK4 REQUIRED gtk4)
     target_sources(NativeFileDialog PRIVATE src/nfd_gtk.c)
+    target_link_libraries(NativeFileDialog PRIVATE ${GTK4_LIBRARIES})
+    target_include_directories(NativeFileDialog PRIVATE ${GTK4_INCLUDE_DIRS})
+    target_compile_options(NativeFileDialog PRIVATE ${GTK4_CFLAGS_OTHER})
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_sources(NativeFileDialog PRIVATE src/nfd_win.cpp)
 else()

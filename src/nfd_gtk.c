@@ -12,97 +12,109 @@
 #include "nfd_common.h"
 
 
-const char INIT_FAIL_MSG[] = "gtk_init_check failed to initilaize GTK+";
+const char INIT_FAIL_MSG[] = "gtk_init_check failed to initialize GTK+";
 
+struct DialogData {
+    nfdresult_t result;
+    nfdchar_t **outPath;
+    nfdpathset_t *outPaths;
+    GMainLoop *loop;
+};
 
-static void AddTypeToFilterName( const char *typebuf, char *filterName, size_t bufsize )
-{
-    const char SEP[] = ", ";
+static void OnOpenResponse(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source_object);
+    struct DialogData *data = user_data;
+    GError *error = NULL;
+    GFile *file = gtk_file_dialog_open_finish(dialog, res, &error);
 
-    size_t len = strlen(filterName);
-    if ( len != 0 )
-    {
-        strncat( filterName, SEP, bufsize - len - 1 );
-        len += strlen(SEP);
+    if (file) {
+        char *filename = g_file_get_path(file);
+        if (filename) {
+            size_t len = strlen(filename);
+            *data->outPath = NFDi_Malloc(len + 1);
+            if (*data->outPath) {
+                memcpy(*data->outPath, filename, len + 1);
+                data->result = NFD_OKAY;
+            } else {
+                data->result = NFD_ERROR;
+            }
+            g_free(filename);
+        }
+        g_object_unref(file);
+    } else {
+        if (g_error_matches(error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED)) {
+            data->result = NFD_CANCEL;
+        } else {
+            NFDi_SetError(error->message);
+            data->result = NFD_ERROR;
+        }
+        g_error_free(error);
     }
-    
-    strncat( filterName, typebuf, bufsize - len - 1 );
+    g_main_loop_quit(data->loop);
 }
 
-static void AddFiltersToDialog( GtkWidget *dialog, const char *filterList )
-{
-    GtkFileFilter *filter;
-    char typebuf[NFD_MAX_STRLEN] = {0};
-    const char *p_filterList = filterList;
-    char *p_typebuf = typebuf;
-    char filterName[NFD_MAX_STRLEN] = {0};
-    
-    if ( !filterList || strlen(filterList) == 0 )
-        return;
+static void OnSaveResponse(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source_object);
+    struct DialogData *data = user_data;
+    GError *error = NULL;
+    GFile *file = gtk_file_dialog_save_finish(dialog, res, &error);
 
-    filter = gtk_file_filter_new();
-    while ( 1 )
-    {
-        
-        if ( NFDi_IsFilterSegmentChar(*p_filterList) )
-        {
-            char typebufWildcard[NFD_MAX_STRLEN];
-            /* add another type to the filter */
-            assert( strlen(typebuf) > 0 );
-            assert( strlen(typebuf) < NFD_MAX_STRLEN-1 );
-            
-            snprintf( typebufWildcard, NFD_MAX_STRLEN, "*.%s", typebuf );
-            AddTypeToFilterName( typebuf, filterName, NFD_MAX_STRLEN );
-            
-            gtk_file_filter_add_pattern( filter, typebufWildcard );
-            
-            p_typebuf = typebuf;
-            memset( typebuf, 0, sizeof(char) * NFD_MAX_STRLEN );
+    if (file) {
+        char *filename = g_file_get_path(file);
+        if (filename) {
+            size_t len = strlen(filename);
+            *data->outPath = NFDi_Malloc(len + 1);
+            if (*data->outPath) {
+                memcpy(*data->outPath, filename, len + 1);
+                data->result = NFD_OKAY;
+            } else {
+                data->result = NFD_ERROR;
+            }
+            g_free(filename);
         }
-        
-        if ( *p_filterList == ';' || *p_filterList == '\0' )
-        {
-            /* end of filter -- add it to the dialog */
-            
-            gtk_file_filter_set_name( filter, filterName );
-            gtk_file_chooser_add_filter( GTK_FILE_CHOOSER(dialog), filter );
-
-            filterName[0] = '\0';
-
-            if ( *p_filterList == '\0' )
-                break;
-
-            filter = gtk_file_filter_new();            
+        g_object_unref(file);
+    } else {
+        if (g_error_matches(error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED)) {
+            data->result = NFD_CANCEL;
+        } else {
+            NFDi_SetError(error->message);
+            data->result = NFD_ERROR;
         }
-
-        if ( !NFDi_IsFilterSegmentChar( *p_filterList ) )
-        {
-            *p_typebuf = *p_filterList;
-            p_typebuf++;
-        }
-
-        p_filterList++;
+        g_error_free(error);
     }
-    
-    /* always append a wildcard option to the end*/
-
-    filter = gtk_file_filter_new();
-    gtk_file_filter_set_name( filter, "*.*" );
-    gtk_file_filter_add_pattern( filter, "*" );
-    gtk_file_chooser_add_filter( GTK_FILE_CHOOSER(dialog), filter );
+    g_main_loop_quit(data->loop);
 }
 
-static void SetDefaultPath( GtkWidget *dialog, const char *defaultPath )
-{
-    if ( !defaultPath || strlen(defaultPath) == 0 )
-        return;
+static void OnFolderResponse(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source_object);
+    struct DialogData *data = user_data;
+    GError *error = NULL;
+    GFile *file = gtk_file_dialog_select_folder_finish(dialog, res, &error);
 
-    /* GTK+ manual recommends not specifically setting the default path.
-       We do it anyway in order to be consistent across platforms.
-
-       If consistency with the native OS is preferred, this is the line
-       to comment out. -ml */
-    gtk_file_chooser_set_current_folder( GTK_FILE_CHOOSER(dialog), defaultPath );
+    if (file) {
+        char *filename = g_file_get_path(file);
+        if (filename) {
+            size_t len = strlen(filename);
+            *data->outPath = NFDi_Malloc(len + 1);
+            if (*data->outPath) {
+                memcpy(*data->outPath, filename, len + 1);
+                data->result = NFD_OKAY;
+            } else {
+                data->result = NFD_ERROR;
+            }
+            g_free(filename);
+        }
+        g_object_unref(file);
+    } else {
+        if (g_error_matches(error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED)) {
+            data->result = NFD_CANCEL;
+        } else {
+            NFDi_SetError(error->message);
+            data->result = NFD_ERROR;
+        }
+        g_error_free(error);
+    }
+    g_main_loop_quit(data->loop);
 }
 
 static nfdresult_t AllocPathSet( GSList *fileList, nfdpathset_t *pathSet )
@@ -157,10 +169,144 @@ static nfdresult_t AllocPathSet( GSList *fileList, nfdpathset_t *pathSet )
     return NFD_OKAY;
 }
 
+static void OnOpenMultipleResponse(GObject *source_object, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source_object);
+    struct DialogData *data = user_data;
+    GError *error = NULL;
+    GListModel *files = gtk_file_dialog_open_multiple_finish(dialog, res, &error);
+
+    if (files) {
+        guint count = g_list_model_get_n_items(files);
+        GSList *fileList = NULL;
+        for (guint i = 0; i < count; i++) {
+            GFile *file = g_list_model_get_item(files, i);
+            if (file) {
+                char *filename = g_file_get_path(file);
+                if (filename) {
+                    fileList = g_slist_append(fileList, filename);
+                }
+                g_object_unref(file);
+            }
+        }
+        if (fileList) {
+            if (AllocPathSet(fileList, data->outPaths) == NFD_OKAY) {
+                data->result = NFD_OKAY;
+            } else {
+                data->result = NFD_ERROR;
+            }
+        }
+        g_object_unref(files);
+    } else {
+        if (g_error_matches(error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_DISMISSED)) {
+            data->result = NFD_CANCEL;
+        } else {
+            NFDi_SetError(error->message);
+            data->result = NFD_ERROR;
+        }
+        g_error_free(error);
+    }
+    g_main_loop_quit(data->loop);
+}
+
+static void AddTypeToFilterName( const char *typebuf, char *filterName, size_t bufsize )
+{
+    const char SEP[] = ", ";
+
+    size_t len = strlen(filterName);
+    if ( len != 0 )
+    {
+        strncat( filterName, SEP, bufsize - len - 1 );
+        len += strlen(SEP);
+    }
+    
+    strncat( filterName, typebuf, bufsize - len - 1 );
+}
+
+static void AddFiltersToDialog( GtkFileDialog *dialog, const char *filterList )
+{
+    GtkFileFilter *filter;
+    GListStore *filters;
+    char typebuf[NFD_MAX_STRLEN] = {0};
+    const char *p_filterList = filterList;
+    char *p_typebuf = typebuf;
+    char filterName[NFD_MAX_STRLEN] = {0};
+    
+    if ( !filterList || strlen(filterList) == 0 )
+        return;
+
+    filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+
+    filter = gtk_file_filter_new();
+    while ( 1 )
+    {
+        
+        if ( NFDi_IsFilterSegmentChar(*p_filterList) )
+        {
+            char typebufWildcard[NFD_MAX_STRLEN + 2];
+            /* add another type to the filter */
+            assert( strlen(typebuf) > 0 );
+            assert( strlen(typebuf) < NFD_MAX_STRLEN-1 );
+            
+            snprintf( typebufWildcard, NFD_MAX_STRLEN + 2, "*.%s", typebuf );
+            AddTypeToFilterName( typebuf, filterName, NFD_MAX_STRLEN );
+            
+            gtk_file_filter_add_pattern( filter, typebufWildcard );
+            
+            p_typebuf = typebuf;
+            memset( typebuf, 0, sizeof(char) * NFD_MAX_STRLEN );
+        }
+        
+        if ( *p_filterList == ';' || *p_filterList == '\0' )
+        {
+            /* end of filter -- add it to the dialog */
+            
+            gtk_file_filter_set_name( filter, filterName );
+            g_list_store_append( filters, filter );
+            g_object_unref( filter );
+
+            filterName[0] = '\0';
+
+            if ( *p_filterList == '\0' )
+                break;
+
+            filter = gtk_file_filter_new();            
+        }
+
+        if ( !NFDi_IsFilterSegmentChar( *p_filterList ) )
+        {
+            *p_typebuf = *p_filterList;
+            p_typebuf++;
+        }
+
+        p_filterList++;
+    }
+    
+    /* always append a wildcard option to the end*/
+
+    filter = gtk_file_filter_new();
+    gtk_file_filter_set_name( filter, "*.*" );
+    gtk_file_filter_add_pattern( filter, "*" );
+    g_list_store_append( filters, filter );
+    g_object_unref( filter );
+
+    gtk_file_dialog_set_filters( dialog, G_LIST_MODEL(filters) );
+    g_object_unref( filters );
+}
+
+static void SetDefaultPath( GtkFileDialog *dialog, const char *defaultPath )
+{
+    if ( !defaultPath || strlen(defaultPath) == 0 )
+        return;
+
+    GFile *folder = g_file_new_for_path(defaultPath);
+    gtk_file_dialog_set_initial_folder( dialog, folder );
+    g_object_unref(folder);
+}
+
 static void WaitForCleanup(void)
 {
-    while (gtk_events_pending())
-        gtk_main_iteration();
+    while (g_main_context_pending(NULL))
+        g_main_context_iteration(NULL, FALSE);
 }
                                  
 /* public */
@@ -169,21 +315,17 @@ nfdresult_t NFD_OpenDialog( const nfdchar_t *filterList,
                             const nfdchar_t *defaultPath,
                             nfdchar_t **outPath )
 {    
-    GtkWidget *dialog;
-    nfdresult_t result;
+    GtkFileDialog *dialog;
+    struct DialogData data;
 
-    if ( !gtk_init_check( NULL, NULL ) )
+    if ( !gtk_init_check() )
     {
         NFDi_SetError(INIT_FAIL_MSG);
         return NFD_ERROR;
     }
 
-    dialog = gtk_file_chooser_dialog_new( "Open File",
-                                          NULL,
-                                          GTK_FILE_CHOOSER_ACTION_OPEN,
-                                          "_Cancel", GTK_RESPONSE_CANCEL,
-                                          "_Open", GTK_RESPONSE_ACCEPT,
-                                          NULL );
+    dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Open File");
 
     /* Build the filter list */
     AddFiltersToDialog(dialog, filterList);
@@ -191,34 +333,21 @@ nfdresult_t NFD_OpenDialog( const nfdchar_t *filterList,
     /* Set the default path */
     SetDefaultPath(dialog, defaultPath);
 
-    result = NFD_CANCEL;
-    if ( gtk_dialog_run( GTK_DIALOG(dialog) ) == GTK_RESPONSE_ACCEPT )
-    {
-        char *filename;
+    data.result = NFD_CANCEL;
+    data.outPath = outPath;
+    data.outPaths = NULL;
+    data.loop = g_main_loop_new(NULL, FALSE);
 
-        filename = gtk_file_chooser_get_filename( GTK_FILE_CHOOSER(dialog) );
+    gtk_file_dialog_open(dialog, NULL, NULL, OnOpenResponse, &data);
+    
+    g_main_loop_run(data.loop);
 
-        {
-            size_t len = strlen(filename);
-            *outPath = NFDi_Malloc( len + 1 );
-            memcpy( *outPath, filename, len + 1 );
-            if ( !*outPath )
-            {
-                g_free( filename );
-                gtk_widget_destroy(dialog);
-                return NFD_ERROR;
-            }
-        }
-        g_free( filename );
-
-        result = NFD_OKAY;
-    }
+    g_main_loop_unref(data.loop);
+    g_object_unref(dialog);
 
     WaitForCleanup();
-    gtk_widget_destroy(dialog);
-    WaitForCleanup();
 
-    return result;
+    return data.result;
 }
 
 
@@ -226,22 +355,17 @@ nfdresult_t NFD_OpenDialogMultiple( const nfdchar_t *filterList,
                                     const nfdchar_t *defaultPath,
                                     nfdpathset_t *outPaths )
 {
-    GtkWidget *dialog;
-    nfdresult_t result;
+    GtkFileDialog *dialog;
+    struct DialogData data;
 
-    if ( !gtk_init_check( NULL, NULL ) )
+    if ( !gtk_init_check() )
     {
         NFDi_SetError(INIT_FAIL_MSG);
         return NFD_ERROR;
     }
 
-    dialog = gtk_file_chooser_dialog_new( "Open Files",
-                                          NULL,
-                                          GTK_FILE_CHOOSER_ACTION_OPEN,
-                                          "_Cancel", GTK_RESPONSE_CANCEL,
-                                          "_Open", GTK_RESPONSE_ACCEPT,
-                                          NULL );
-    gtk_file_chooser_set_select_multiple( GTK_FILE_CHOOSER(dialog), TRUE );
+    dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Open Files");
 
     /* Build the filter list */
     AddFiltersToDialog(dialog, filterList);
@@ -249,46 +373,38 @@ nfdresult_t NFD_OpenDialogMultiple( const nfdchar_t *filterList,
     /* Set the default path */
     SetDefaultPath(dialog, defaultPath);
 
-    result = NFD_CANCEL;
-    if ( gtk_dialog_run( GTK_DIALOG(dialog) ) == GTK_RESPONSE_ACCEPT )
-    {
-        GSList *fileList = gtk_file_chooser_get_filenames( GTK_FILE_CHOOSER(dialog) );
-        if ( AllocPathSet( fileList, outPaths ) == NFD_ERROR )
-        {
-            gtk_widget_destroy(dialog);
-            return NFD_ERROR;
-        }
-        
-        result = NFD_OKAY;
-    }
+    data.result = NFD_CANCEL;
+    data.outPath = NULL;
+    data.outPaths = outPaths;
+    data.loop = g_main_loop_new(NULL, FALSE);
+
+    gtk_file_dialog_open_multiple(dialog, NULL, NULL, OnOpenMultipleResponse, &data);
+    
+    g_main_loop_run(data.loop);
+
+    g_main_loop_unref(data.loop);
+    g_object_unref(dialog);
 
     WaitForCleanup();
-    gtk_widget_destroy(dialog);
-    WaitForCleanup();
 
-    return result;
+    return data.result;
 }
 
 nfdresult_t NFD_SaveDialog( const nfdchar_t *filterList,
                             const nfdchar_t *defaultPath,
                             nfdchar_t **outPath )
 {
-    GtkWidget *dialog;
-    nfdresult_t result;
+    GtkFileDialog *dialog;
+    struct DialogData data;
 
-    if ( !gtk_init_check( NULL, NULL ) )
+    if ( !gtk_init_check() )
     {
         NFDi_SetError(INIT_FAIL_MSG);
         return NFD_ERROR;
     }
 
-    dialog = gtk_file_chooser_dialog_new( "Save File",
-                                          NULL,
-                                          GTK_FILE_CHOOSER_ACTION_SAVE,
-                                          "_Cancel", GTK_RESPONSE_CANCEL,
-                                          "_Save", GTK_RESPONSE_ACCEPT,
-                                          NULL ); 
-    gtk_file_chooser_set_do_overwrite_confirmation( GTK_FILE_CHOOSER(dialog), TRUE );
+    dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Save File");
 
     /* Build the filter list */    
     AddFiltersToDialog(dialog, filterList);
@@ -296,84 +412,54 @@ nfdresult_t NFD_SaveDialog( const nfdchar_t *filterList,
     /* Set the default path */
     SetDefaultPath(dialog, defaultPath);
     
-    result = NFD_CANCEL;    
-    if ( gtk_dialog_run( GTK_DIALOG(dialog) ) == GTK_RESPONSE_ACCEPT )
-    {
-        char *filename;
-        filename = gtk_file_chooser_get_filename( GTK_FILE_CHOOSER(dialog) );
-        
-        {
-            size_t len = strlen(filename);
-            *outPath = NFDi_Malloc( len + 1 );
-            memcpy( *outPath, filename, len + 1 );
-            if ( !*outPath )
-            {
-                g_free( filename );
-                gtk_widget_destroy(dialog);
-                return NFD_ERROR;
-            }
-        }
-        g_free(filename);
+    data.result = NFD_CANCEL;
+    data.outPath = outPath;
+    data.outPaths = NULL;
+    data.loop = g_main_loop_new(NULL, FALSE);
 
-        result = NFD_OKAY;
-    }
+    gtk_file_dialog_save(dialog, NULL, NULL, OnSaveResponse, &data);
+    
+    g_main_loop_run(data.loop);
 
-    WaitForCleanup();
-    gtk_widget_destroy(dialog);
+    g_main_loop_unref(data.loop);
+    g_object_unref(dialog);
+
     WaitForCleanup();
     
-    return result;
+    return data.result;
 }
 
 nfdresult_t NFD_PickFolder(const nfdchar_t *defaultPath,
     nfdchar_t **outPath)
 {
-    GtkWidget *dialog;
-    nfdresult_t result;
+    GtkFileDialog *dialog;
+    struct DialogData data;
 
-    if (!gtk_init_check(NULL, NULL))
+    if (!gtk_init_check())
     {
         NFDi_SetError(INIT_FAIL_MSG);
         return NFD_ERROR;
     }
 
-    dialog = gtk_file_chooser_dialog_new( "Select folder",
-                                          NULL,
-                                          GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER,
-                                          "_Cancel", GTK_RESPONSE_CANCEL,
-                                          "_Select", GTK_RESPONSE_ACCEPT,
-                                          NULL ); 
-    gtk_file_chooser_set_do_overwrite_confirmation( GTK_FILE_CHOOSER(dialog), TRUE );
-
+    dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Select folder");
 
     /* Set the default path */
     SetDefaultPath(dialog, defaultPath);
     
-    result = NFD_CANCEL;    
-    if ( gtk_dialog_run( GTK_DIALOG(dialog) ) == GTK_RESPONSE_ACCEPT )
-    {
-        char *filename;
-        filename = gtk_file_chooser_get_filename( GTK_FILE_CHOOSER(dialog) );
-        
-        {
-            size_t len = strlen(filename);
-            *outPath = NFDi_Malloc( len + 1 );
-            memcpy( *outPath, filename, len + 1 );
-            if ( !*outPath )
-            {
-                g_free( filename );
-                gtk_widget_destroy(dialog);
-                return NFD_ERROR;
-            }
-        }
-        g_free(filename);
+    data.result = NFD_CANCEL;
+    data.outPath = outPath;
+    data.outPaths = NULL;
+    data.loop = g_main_loop_new(NULL, FALSE);
 
-        result = NFD_OKAY;
-    }
+    gtk_file_dialog_select_folder(dialog, NULL, NULL, OnFolderResponse, &data);
+    
+    g_main_loop_run(data.loop);
 
-    WaitForCleanup();
-    gtk_widget_destroy(dialog);
+    g_main_loop_unref(data.loop);
+    g_object_unref(dialog);
+
     WaitForCleanup();
     
-    return result;
+    return data.result;
 }

@@ -1,4 +1,4 @@
-### This Fork of Native File Dialog adds CMake support, but otherwise the library is untouched.
+## This is a Fork of [Native File Dialog](https://github.com/mlabbe/nativefiledialog), which replaces the build system with CMake, and bumps the GTK version to 4.
 
 # Native File Dialog #
 
@@ -17,7 +17,7 @@ Features:
  - No third party dependencies for building or linking.
  - Support for Vista's modern `IFileDialog` on Windows.
  - Support for non-deprecated Cocoa APIs on OS X.
- - GTK3 dialog on Linux.
+ - GTK4 dialog on Linux.
  - Optional Zenity support on Linux to avoid linking GTK.
  - Tested, works alongside [http://www.libsdl.org](SDL2) on all platforms, for the game developers out there.
 
@@ -54,7 +54,7 @@ See self-documenting API [NFD.h](src/include/nfd.h) for more options.
 # Screenshots #
 
 ![Windows rendering a dialog](screens/open_win.png?raw=true)
-![GTK3 on Linux rendering a dialog](screens/open_gtk3.png?raw=true)
+![GTK4 on Linux rendering a dialog](screens/open_gtk4.png?raw=true)
 ![Cocoa on MacOS rendering a dialog](screens/open_cocoa.png?raw=true)
 
 ## Changelog ##
@@ -82,38 +82,25 @@ release | what's new                  | date
 
 ## Building ##
 
-NFD uses [Premake5](https://premake.github.io/download.html) generated Makefiles and IDE project files.  The generated project files are checked in under `build/` so you don't have to download and use Premake in most cases.
+NFD uses CMake to build.
 
-If you need to run Premake5 directly, further [build documentation](docs/build.md) is available.
-
-Previously, NFD used SCons to build.  As of 1.1.6, SCons support has been removed entirely.
-
-`nfd.a` will be built for release builds, and `nfd_d.a` will be built for debug builds.
-
-### Makefiles ###
-
-The makefile offers up to four options, with `release_x64` as the default.
-
-    make config=release_x86
-    make config=release_x64
-    make config=debug_x86
-    make config=debug_x64
+```bash
+mkdir build
+cd build
+cmake ..
+cmake --build .
+```
 
 ### Compiling Your Programs ###
 
  1. Add `src/include` to your include search path.
- 2. Add `nfd.lib` or `nfd_d.lib` to the list of list of static libraries to link against (for release or debug, respectively).
- 3. Add `build/<debug|release>/<arch>` to the library search path.
+ 2. Add `NativeFileDialog` to the list of static libraries to link against.
 
 #### Linux GTK ####
 
-`apt-get libgtk-3-dev` installs the gtk dependency for library compilation.
+`apt-get libgtk-4-dev` installs the gtk dependency for library compilation.
 
-On Linux, you have the option of compiling and linking against GTK.  If you use it, the recommended way to compile is to include the arguments of `pkg-config --cflags --libs gtk+-3.0`.
-
-#### Linux Zenity ####
-
-Alternatively, you can use the Zenity backend by running the Makefile in `build/gmake_linux_zenity`.  Zenity runs the dialog in its own address space, but requires the user to have Zenity correctly installed and configured on their system.
+On Linux, you have the option of compiling and linking against GTK.  If you use it, the recommended way to compile is to include the arguments of `pkg-config --cflags --libs gtk4`.
 
 #### MacOS ####
 
@@ -126,8 +113,6 @@ On Windows, ensure you are linking against `comctl32.lib`.
 ## Usage ##
 
 See `NFD.h` for API calls.  See `tests/*.c` for example code.
-
-After compiling, `build/bin` contains compiled test programs.  The appropriate subdirectory under `build/lib` contains the built library.
 
 ## File Filter Syntax ##
 
@@ -159,7 +144,7 @@ I accept quality code patches, or will resolve these and other matters through s
  - No support for Windows XP's legacy dialogs such as `GetOpenFileName`.
  - No support for file filter names -- ex: "Image Files" (*.png, *.jpg).  Nameless filters are supported, however.
  - GTK Zenity implementation's process exec error handling does not gracefully handle numerous error cases, choosing to abort rather than cleanup and return.
- - GTK 3 spams one warning per dialog created.
+ - GTK 4 spams one warning per dialog created.
 
 # Copyright and Credit #
 
